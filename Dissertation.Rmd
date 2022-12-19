@@ -70,11 +70,13 @@ for(i in taskViewNames){
 ```{r}
 #Starting the data cleaning process
 vec = MLTVDesc$description
-corpus = Corpus(VectorSource(vec, encoding = "UTF-8"))
+corpus = Corpus(VectorSource(vec))
 corpus = tm_map(corpus, content_transformer(tolower))
 corpus = tm_map(corpus, removeNumbers)
 corpus = tm_map(corpus, removePunctuation)
-corpus = tm_map(corpus, corpus, removeWords, stopwords("english"))
+corpus = tm_map(corpus, removeWords, stopwords("english"))
+corpus = tm_map(corpus, stemDocument)
+corpus = tm_map(corpus, stripWhitespace)
 as.character(corpus[[1]])
 ```
 
