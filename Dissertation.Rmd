@@ -69,7 +69,7 @@ for(i in taskViewNames){
 
 ```{r}
 #Starting the data cleaning process
-vec = MLTVDesc$description
+vec = allDescCore$description
 corpus = Corpus(VectorSource(vec))
 corpus = tm_map(corpus, content_transformer(tolower))
 corpus = tm_map(corpus, removeNumbers)
@@ -78,5 +78,12 @@ corpus = tm_map(corpus, removeWords, stopwords("english"))
 corpus = tm_map(corpus, stemDocument)
 corpus = tm_map(corpus, stripWhitespace)
 as.character(corpus[[1]])
+```
+
+```{r}
+#Creating the bag of words
+dtm = DocumentTermMatrix(corpus)
+dtm = removeSparseTerms(dtm, 0.99)
+finalDataSet = as.data.frame(as.matrix(dtm))
 ```
 
