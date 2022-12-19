@@ -78,9 +78,3 @@ corpus = tm_map(corpus, corpus, removeWords, stopwords("english"))
 as.character(corpus[[1]])
 ```
 
-```{r}
-print("Hello World")
-```
-
-
-
