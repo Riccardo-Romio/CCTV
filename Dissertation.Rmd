@@ -10,7 +10,8 @@ library(ctv)
 library(tidyverse)
 library(RWsearch)
 library(tm)
-library(SnowballC)
+library(cranly)
+library(tools)
 crandb_down()
 ```
 
@@ -85,5 +86,15 @@ as.character(corpus[[1]])
 dtm = DocumentTermMatrix(corpus)
 dtm = removeSparseTerms(dtm, 0.99)
 finalDataSet = as.data.frame(as.matrix(dtm))
+finalDataSet$taskView = allDescCore$taskView #inserts class of each observation for the model (perhaps put this later so this is the last column)
+```
+
+```{r}
+#Initiating cranly data gathering
+p_db = tools::CRAN_package_db()
+package_db = clean_CRAN_db()
+package_network <- build_network(package_db)
+
+compute_dependence_tree(package_network, "ggplot2")
 ```
 
