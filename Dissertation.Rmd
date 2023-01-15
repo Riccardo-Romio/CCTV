@@ -12,6 +12,8 @@ library(RWsearch)
 library(tm)
 library(cranly)
 library(tools)
+library(nnet)
+library(dplyr)
 crandb_down()
 ```
 
@@ -84,7 +86,7 @@ as.character(corpus[[1]])
 ```{r}
 #Creating the bag of words
 dtm = DocumentTermMatrix(corpus)
-dtm = removeSparseTerms(dtm, 0.99)
+dtm = removeSparseTerms(dtm, 0.999)
 finalDataSet = as.data.frame(as.matrix(dtm))
 finalDataSet$taskView = allDescCore$taskView #inserts class of each observation for the model (perhaps put this later so this is the last column)
 ```
@@ -93,8 +95,21 @@ finalDataSet$taskView = allDescCore$taskView #inserts class of each observation 
 #Initiating cranly data gathering
 p_db = tools::CRAN_package_db()
 package_db = clean_CRAN_db()
-package_network <- build_network(package_db)
+package_network = build_network(package_db)
 
-compute_dependence_tree(package_network, "ggplot2")
+dependenceTree = compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
+dependenceTree
+```   
+```{r}
+sample_size = floor(0.9*nrow(finalDataSet))
+set.seed(777)
+
+# randomly split data in r
+picked = sample(seq_len(nrow(finalDataSet)),size = sample_size)
+train =finalDataSet[picked,]
+test = finalDataSet[-picked,]
+
+finalDataSet$taskView = relevel(factor(finalDataSet$taskView), ref = "Agriculture")
+model = multinom(taskView ~ ., data = train, MaxNWts = 111049)
 ```
 
