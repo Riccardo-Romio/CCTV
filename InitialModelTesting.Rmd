@@ -1,0 +1,113 @@
+---
+title: "CS350 Networks of Software and Developers"
+author: "Riccardo Romio"
+date: "2022-12-15"
+output: html_document
+---
+
+```{r}
+library(ctv)
+library(tidyverse)
+library(RWsearch)
+library(tm)
+library(cranly)
+library(tools)
+library(nnet)
+library(dplyr)
+crandb_down()
+```
+
+```{r}
+taskViews <-  ctv::available.views()
+
+#random stuff past this point in the block
+taskViewNames <- c()
+for(i in seq(length(taskViews))){
+  taskViewNames <- append(taskViewNames, unlist(taskViews[i])[1])
+}
+```
+
+```{r} 
+#Function for getting description files covering edge cases where there may not be any packages in a TV or a package has no description file
+getDesc <-  function(tv, coreCheck){
+  temp <- taskViews[[tv]]
+  temp2 <- temp %>% 
+    .$packagelist %>% 
+    filter(core == coreCheck) %>% 
+    .$name
+  if(length(temp2) == 0){
+    return(data.frame(taskView = c(), packages =  c(), description = c()))
+  }
+  descArr <- c()
+  counter <- 0
+  for(i in temp2){
+    descTemp <- crandb %>% 
+      filter(Package == i) %>% 
+      .$Description
+    if(length(descTemp) == 0){
+      descTemp <- ""
+    }
+    descArr <- append(descArr, descTemp)
+  }
+  return(data.frame(taskView = tv, packages = temp2, description = descArr))
+}
+```
+
+```{r}
+#Test that the function above works
+MLTVDesc <- getDesc("MachineLearning", FALSE)
+``` 
+
+```{r}
+#gathering all desc files
+allDescCore <- data.frame(taskView = c(), packages = c(), description = c())
+for(i in taskViewNames){
+  allDescCore <- rbind(allDescCore, getDesc(i, FALSE))
+}
+```
+
+```{r, warning = FALSE}
+#Starting the data cleaning process and showing the difference between beginning and end
+vec <- allDescCore$description
+vec[[1]]
+corpus <- Corpus(VectorSource(vec)) %>% 
+  tm_map(content_transformer(tolower)) %>% 
+  tm_map(removeNumbers) %>% 
+  tm_map(removePunctuation) %>% 
+  tm_map(removeWords, stopwords("english")) %>% 
+  tm_map(stemDocument) %>% 
+  tm_map(stripWhitespace)
+
+as.character(corpus[[1]]) 
+```
+
+```{r}
+#Creating the bag of words
+dtm <- DocumentTermMatrix(corpus)
+dtm <- removeSparseTerms(dtm, 0.999)
+finalDataSet <- as.data.frame(as.matrix(dtm))
+finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model (perhaps put this later so this is the last column)
+```
+
+```{r}
+#Initiating cranly data gathering
+p_db <- tools::CRAN_package_db()
+package_db <- clean_CRAN_db()
+package_network <- build_network(package_db)
+
+dependenceTree <- compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
+dependenceTree
+```   
+```{r}
+sample_size <- floor(0.9*nrow(finalDataSet))
+set.seed(777)
+
+# randomly split data in r
+picked <- sample(seq_len(nrow(finalDataSet)),size = sample_size)
+train <- finalDataSet[picked,]
+test <- finalDataSet[-picked,]
+
+finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
+model <- multinom(taskView ~ ., data = train, MaxNWts = 111049)
+```
+
