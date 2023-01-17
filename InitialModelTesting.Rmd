@@ -67,7 +67,7 @@ for(i in taskViewNames){
 ```
 
 ```{r, warning = FALSE}
-#Starting the data cleaning process and showing the difference between beginning and end
+#Starting the data cleaning process and showing the difference of before and after
 vec <- allDescCore$description
 vec[[1]]
 corpus <- Corpus(VectorSource(vec)) %>% 
@@ -84,7 +84,7 @@ as.character(corpus[[1]])
 ```{r}
 #Creating the bag of words
 dtm <- DocumentTermMatrix(corpus)
-dtm <- removeSparseTerms(dtm, 0.999)
+dtm <- removeSparseTerms(dtm, 0.99)
 finalDataSet <- as.data.frame(as.matrix(dtm))
 finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model (perhaps put this later so this is the last column)
 ```
@@ -96,8 +96,8 @@ package_db <- clean_CRAN_db()
 package_network <- build_network(package_db)
 
 dependenceTree <- compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
-dependenceTree
-```   
+```
+
 ```{r}
 sample_size <- floor(0.9*nrow(finalDataSet))
 set.seed(777)
@@ -108,6 +108,19 @@ train <- finalDataSet[picked,]
 test <- finalDataSet[-picked,]
 
 finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
-model <- multinom(taskView ~ ., data = train, MaxNWts = 111049)
+model <- multinom(taskView ~ ., data = train, MaxNWts = 22000)
+```
+```{r}
+modelClassificationTest <- predict(model, newdata = test, "probs")
+classifiedList <- colnames(modelClassificationTest)[apply(modelClassificationTest,1,which.max)]
+finalClassifiedDf <- data.frame(test$taskView, classifiedList)
+counter <- 0
+for(i in seq(length(finalClassifiedDf$test.taskView))){
+
+  if(finalClassifiedDf$test.taskView[i] == finalClassifiedDf$classifiedList[i]){
+    counter <- counter + 1 
+  }
+}
+counter/length(finalClassifiedDf$test.taskView)
 ```
 
