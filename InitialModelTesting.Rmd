@@ -2,10 +2,12 @@
 title: "CS350 Networks of Software and Developers"
 author: "Riccardo Romio"
 date: "2022-12-15"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
-```{r}
+```{r, echo = FALSE}
 library(ctv)
 library(tidyverse)
 library(RWsearch)
@@ -16,9 +18,9 @@ library(nnet)
 library(dplyr)
 crandb_down()
 ```
-
-```{r}
-taskViews <-  ctv::available.views()
+# Progress So Far
+```{r, echo = FALSE}
+taskViews <-  available.views()
 
 #random stuff past this point in the block
 taskViewNames <- c()
@@ -26,8 +28,22 @@ for(i in seq(length(taskViews))){
   taskViewNames <- append(taskViewNames, unlist(taskViews[i])[1])
 }
 ```
+## Data Gathering and Cleaning
 
-```{r} 
+The central pieces of data needed to create the model are: **Task View packages**, their **description file**, their corresponding (already) **classified Task View** and their **package dependence index** corresponding to all Task Views.
+
+All of this data can be collected by querying CRAN and using tools from packages ctv and cranly.
+
+### ctv
+
+Using ctv, it is possible to get all Task Views in a neatly organized list, with all underlying packages and description files. A function has been built to extract this and gives a table with 3 columns: taskView, packages and description. These are all strings.
+
+The next step has currently been performed using the tm (text mining) package, but in the near future will be updated to use the tidytext package, as it allows for a more powerful, faster, and easier handling of text data (this will be following practices from Text Mining with R, A Tidy Approach by Julia Silge and David Robinson). 
+
+To convert the description files in usable features for the model, the first requirement is to strip the text data of capital letters, numbers, punctuation, and stop words. Lastly, it is important to stem the text, so that slightly different variations of the same word are counted as the same stem. Using built in functions to the tm package, below it can be seen how the description files are transformed.
+
+
+```{r, echo = FALSE} 
 #Function for getting description files covering edge cases where there may not be any packages in a TV or a package has no description file
 getDesc <-  function(tv, coreCheck){
   temp <- taskViews[[tv]]
@@ -53,12 +69,12 @@ getDesc <-  function(tv, coreCheck){
 }
 ```
 
-```{r}
+```{r, echo = FALSE}
 #Test that the function above works
 MLTVDesc <- getDesc("MachineLearning", FALSE)
 ``` 
 
-```{r}
+```{r, echo = FALSE}
 #gathering all desc files
 allDescCore <- data.frame(taskView = c(), packages = c(), description = c())
 for(i in taskViewNames){
@@ -66,7 +82,7 @@ for(i in taskViewNames){
 }
 ```
 
-```{r, warning = FALSE}
+```{r, warning = FALSE, echo = FALSE}
 #Starting the data cleaning process and showing the difference of before and after
 vec <- allDescCore$description
 vec[[1]]
@@ -81,7 +97,7 @@ corpus <- Corpus(VectorSource(vec)) %>%
 as.character(corpus[[1]]) 
 ```
 
-```{r}
+```{r, echo = FALSE}
 #Creating the bag of words
 dtm <- DocumentTermMatrix(corpus)
 dtm <- removeSparseTerms(dtm, 0.99)
@@ -89,7 +105,9 @@ finalDataSet <- as.data.frame(as.matrix(dtm))
 finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model (perhaps put this later so this is the last column)
 ```
 
-```{r}
+Next, it is necessary to turn the transformed description files into a Document Term Matrix
+
+```{r, echo = FALSE}
 #Initiating cranly data gathering
 p_db <- tools::CRAN_package_db()
 package_db <- clean_CRAN_db()
@@ -98,7 +116,7 @@ package_network <- build_network(package_db)
 dependenceTree <- compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
 ```
 
-```{r}
+```{r, echo = FALSE}
 sample_size <- floor(0.9*nrow(finalDataSet))
 set.seed(777)
 
@@ -108,9 +126,9 @@ train <- finalDataSet[picked,]
 test <- finalDataSet[-picked,]
 
 finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
-model <- multinom(taskView ~ ., data = train, MaxNWts = 22000)
+model <- multinom(taskView ~ ., data = train, MaxNWts = 22000, maxit = 500)
 ```
-```{r}
+```{r, echo = FALSE}
 modelClassificationTest <- predict(model, newdata = test, "probs")
 classifiedList <- colnames(modelClassificationTest)[apply(modelClassificationTest,1,which.max)]
 finalClassifiedDf <- data.frame(test$taskView, classifiedList)
