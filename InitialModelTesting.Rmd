@@ -1,5 +1,5 @@
 ---
-title: "CS350 Networks of Software and Developers"
+title: "{Automatic Classification of Packages into Task Views in CRAN"
 author: "Riccardo Romio"
 date: "2022-12-15"
 output:
@@ -7,7 +7,7 @@ output:
   html_document: default
 ---
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, results = "hide"}
 library(ctv)
 library(tidyverse)
 library(RWsearch)
@@ -38,6 +38,7 @@ All of this data can be collected by querying CRAN and using tools from packages
 
 Using ctv, it is possible to get all Task Views in a neatly organized list, with all underlying packages and description files. A function has been built to extract this and gives a table with 3 columns: taskView, packages and description. These are all strings.
 
+### tm
 The next step has currently been performed using the tm (text mining) package, but in the near future will be updated to use the tidytext package, as it allows for a more powerful, faster, and easier handling of text data (this will be following practices from Text Mining with R, A Tidy Approach by Julia Silge and David Robinson). 
 
 To convert the description files in usable features for the model, the first requirement is to strip the text data of capital letters, numbers, punctuation, and stop words. Lastly, it is important to stem the text, so that slightly different variations of the same word are counted as the same stem. Using built in functions to the tm package, below it can be seen how the description files are transformed.
@@ -82,10 +83,10 @@ for(i in taskViewNames){
 }
 ```
 
-```{r, warning = FALSE, echo = FALSE}
+```{r, warning = FALSE, echo = FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
 #Starting the data cleaning process and showing the difference of before and after
 vec <- allDescCore$description
-vec[[1]]
+print(vec[[1]])
 corpus <- Corpus(VectorSource(vec)) %>% 
   tm_map(content_transformer(tolower)) %>% 
   tm_map(removeNumbers) %>% 
@@ -94,30 +95,39 @@ corpus <- Corpus(VectorSource(vec)) %>%
   tm_map(stemDocument) %>% 
   tm_map(stripWhitespace)
 
-as.character(corpus[[1]]) 
+print(as.character(corpus[[1]]))
 ```
 
-```{r, echo = FALSE}
+```{r}
 #Creating the bag of words
 dtm <- DocumentTermMatrix(corpus)
-dtm <- removeSparseTerms(dtm, 0.99)
+dtm <- removeSparseTerms(dtm, 0.95)
 finalDataSet <- as.data.frame(as.matrix(dtm))
-finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model (perhaps put this later so this is the last column)
+finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model 
+#perhaps put this after Package dependence index so this is the last column
 ```
 
-Next, it is necessary to turn the transformed description files into a Document Term Matrix
+A possible improvement is to change the character "-" to a space, as important words are merged with the next word, as can be seen in the example.
+
+Next, it is necessary to turn the transformed description files into a Document Term Matrix, a sparse matrix that determines the frequency of a word in each "document", or in this context, the frequency of a word in each description file. It is structured so that the columns represent all available words in the constructed corpus, and each row is a different description file. Lastly, terms that have a 95% of empty, or occurring 0 times in a document, are removed from the dataset as they are likely to not give us a lot of information regarding the model. This parameter can be changed perhaps including this as an input in the web-app that will be created. Regardless, this is the dataset that will be used to train and test the classification model.
 
 ```{r, echo = FALSE}
 #Initiating cranly data gathering
-p_db <- tools::CRAN_package_db()
-package_db <- clean_CRAN_db()
-package_network <- build_network(package_db)
+#p_db <- tools::CRAN_package_db()
+#package_db <- clean_CRAN_db()
+#package_network <- build_network(package_db)
 
-dependenceTree <- compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
+#dependenceTree <- compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
 ```
+## Model Building and Testing
 
-```{r, echo = FALSE}
-sample_size <- floor(0.9*nrow(finalDataSet))
+### nnet
+
+Lastly, we split the dataset in 60% train data, 40% test data, and start the model training. Using the `multinom()` function from the nnet package, it is possible create a multionmial logistic regression model training on the test data.
+
+
+```{r, results = "hide}
+sample_size <- floor(0.6 * nrow(finalDataSet))
 set.seed(777)
 
 # randomly split data in r
@@ -126,19 +136,36 @@ train <- finalDataSet[picked,]
 test <- finalDataSet[-picked,]
 
 finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
-model <- multinom(taskView ~ ., data = train, MaxNWts = 22000, maxit = 500)
+model <- multinom(taskView ~ ., data = train, MaxNWts = 10000, maxit = 1000)
 ```
+The model is then tested on the test data, and the class which is predicted with the highest probability is the one that is chosen. Below is a table outlining the model accuracy for each Task View. As can be seen, there is some strong variance between them. Lastly, we can see the overall model accuracy, which is better than a random classification, as there are 42 choices of Task Views, but is nonetheless very low.   
+
 ```{r, echo = FALSE}
 modelClassificationTest <- predict(model, newdata = test, "probs")
 classifiedList <- colnames(modelClassificationTest)[apply(modelClassificationTest,1,which.max)]
 finalClassifiedDf <- data.frame(test$taskView, classifiedList)
-counter <- 0
-for(i in seq(length(finalClassifiedDf$test.taskView))){
-
-  if(finalClassifiedDf$test.taskView[i] == finalClassifiedDf$classifiedList[i]){
-    counter <- counter + 1 
+classificationCounter <- c()
+classificationOverview <- unique(finalClassifiedDf$test.taskView)
+for(j in classificationOverview){
+  counter <- 0
+  temp = filter(finalClassifiedDf, finalClassifiedDf$test.taskView == j)
+  for(i in seq(length(temp$test.taskView))){
+    if(temp$test.taskView[i] == temp$classifiedList[i]){
+      counter <- counter + 1 
+    }
   }
+  classificationCounter <- append(classificationCounter, (counter/length(temp$test.taskView)))
 }
-counter/length(finalClassifiedDf$test.taskView)
+data.frame(classificationOverview, classificationCounter)
+
+print(paste("Model Accuracy is:", (counter/length(finalClassifiedDf$test.taskView))))
 ```
+
+Next steps: 
+
+- Tweak parameters such as sparsity 
+- Improve text cleaning methods with tidytext, 
+- Introduce parallel programming to improve model training speed (maybe), 
+- Begin creating web-app with Shiny with basic ui.
+
 
