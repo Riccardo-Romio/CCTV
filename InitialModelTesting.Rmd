@@ -89,6 +89,7 @@ vec <- allDescCore$description
 print(vec[[1]])
 corpus <- Corpus(VectorSource(vec)) %>% 
   tm_map(content_transformer(tolower)) %>% 
+  tm_map(gsub, pattern = "-", replacement = " ") %>% 
   tm_map(removeNumbers) %>% 
   tm_map(removePunctuation) %>% 
   tm_map(removeWords, stopwords("english")) %>% 
@@ -101,7 +102,7 @@ print(as.character(corpus[[1]]))
 ```{r}
 #Creating the bag of words
 dtm <- DocumentTermMatrix(corpus)
-dtm <- removeSparseTerms(dtm, 0.95)
+dtm <- removeSparseTerms(dtm, 0.99)
 finalDataSet <- as.data.frame(as.matrix(dtm))
 finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model 
 #perhaps put this after Package dependence index so this is the last column
@@ -136,7 +137,7 @@ train <- finalDataSet[picked,]
 test <- finalDataSet[-picked,]
 
 finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
-model <- multinom(taskView ~ ., data = train, MaxNWts = 10000, maxit = 1000)
+model <- multinom(taskView ~ ., data = train, MaxNWts = 25000, maxit = 1500)
 ```
 The model is then tested on the test data, and the class which is predicted with the highest probability is the one that is chosen. Below is a table outlining the model accuracy for each Task View. As can be seen, there is some strong variance between them. Lastly, we can see the overall model accuracy, which is better than a random classification, as there are 42 choices of Task Views, but is nonetheless very low.   
 
