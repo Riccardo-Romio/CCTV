@@ -118,18 +118,60 @@ p_db <- tools::CRAN_package_db()
 package_db <- clean_CRAN_db()
 package_network <- build_network(package_db)
 
-dependenceTree <- build_dependence_tree(package_network, package = "cranly") #problem is how to use a vector as feature, to be fixed later
+dependenceTree <- build_dependence_tree(package_network, package = "PlackettLuce")
 
-test = summary(dependenceTree)
+test <- summary_dependence_tree(dependenceTree)
 test
 ```
+
+
 ```{r}
-summary.cranly_dependence_tree <- function(object) {
+dependenceIndex <- function(object, tv) {
+    summ <- object$summaries
+    dependence_index <- 0
+    taskView <- taskViews[[tv]]$packagelist$name
+    if (nrow(summ)) {
+        tempSummaries <- data.frame(object$summaries)
+        tempGeneration <- object$nodes$generation
+        tempPackage <- object$nodes$package
+        print(typeof(tempPackage))
+        for(i in object$nodes$package){
+          print(tempPackage)
+          temp <- match(i, tempPackage)
+          print(i)
+          print(temp)
+          if(!(i %in% taskView)){
+            tempSummaries <- tempSummaries[-temp,]
+            tempPackage <- tempPackage[-temp]
+            tempGeneration <- tempGeneration[-temp]
+          }
+        }
+        print(tempSummaries)
+        w <- 1/colSums(tempSummaries[c("n_imported_by", "n_depended_by", "n_linked_by")])
+        print(w)
+        g <- tempGeneration
+        ind <- names(w) != tempPackage
+        print(ind)
+        dependence_index <- weighted.mean(-g[ind], w[ind]) - 1
+      if(is.na(dependence_index)){
+        return(0)
+      }
+      return(dependence_index)
+    }
+
+}
+
+```
+
+```{r}
+summary_dependence_tree <- function(object, ...) {
     summ <- object$summaries
     if (nrow(summ)) {
         w <- with(object, 1/rowSums(summaries[c("n_imported_by", "n_depended_by", "n_linked_by")]))
+        print(w)
         g <- object$nodes$generation
         ind <- names(w) != object$package
+        print(ind)
         dependence_index <- weighted.mean(-g[ind], w[ind]) - 1
         n_generations <- -min(object$nodes$generation)
         parents <- with(object, nodes$package[nodes$generation == -1])
@@ -144,8 +186,8 @@ summary.cranly_dependence_tree <- function(object) {
          parents = parents,
          dependence_index = dependence_index)
 }
-
 ```
+
 
 ```{r}
 for(i in seq(length(finalDataSet[1]))){
