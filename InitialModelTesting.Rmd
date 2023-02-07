@@ -102,9 +102,9 @@ print(as.character(corpus[[1]]))
 ```{r}
 #Creating the bag of words
 dtm <- DocumentTermMatrix(corpus)
-dtm <- removeSparseTerms(dtm, 0.99)
+dtm <- removeSparseTerms(dtm, 0.95)
 finalDataSet <- as.data.frame(as.matrix(dtm))
-finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model 
+ 
 #perhaps put this after Package dependence index so this is the last column
 ```
 
@@ -114,17 +114,56 @@ Next, it is necessary to turn the transformed description files into a Document 
 
 ```{r, echo = FALSE}
 #Initiating cranly data gathering
-#p_db <- tools::CRAN_package_db()
-#package_db <- clean_CRAN_db()
-#package_network <- build_network(package_db)
+p_db <- tools::CRAN_package_db()
+package_db <- clean_CRAN_db()
+package_network <- build_network(package_db)
 
-#dependenceTree <- compute_dependence_tree(package_network, package = "PlackettLuce") #problem is how to use a vector as feature, to be fixed later
+dependenceTree <- build_dependence_tree(package_network, package = "cranly") #problem is how to use a vector as feature, to be fixed later
+
+test = summary(dependenceTree)
+test
 ```
+```{r}
+summary.cranly_dependence_tree <- function(object) {
+    summ <- object$summaries
+    if (nrow(summ)) {
+        w <- with(object, 1/rowSums(summaries[c("n_imported_by", "n_depended_by", "n_linked_by")]))
+        g <- object$nodes$generation
+        ind <- names(w) != object$package
+        dependence_index <- weighted.mean(-g[ind], w[ind]) - 1
+        n_generations <- -min(object$nodes$generation)
+        parents <- with(object, nodes$package[nodes$generation == -1])
+    }
+    else {
+        n_generations <- 0
+        dependence_index <- 0
+        parents <- NULL
+    }
+    list(package = object$package,
+         n_generations = n_generations,
+         parents = parents,
+         dependence_index = dependence_index)
+}
+
+```
+
+```{r}
+for(i in seq(length(finalDataSet[1]))){
+  for(j in seq(length(finalDataSet[1,]))){
+    tf = finalDataSet[i,j]/sum(finalDataSet[i,] != 0)
+    itf = log2(length(finalDataSet[1])/sum(finalDataSet[,j] != 0))
+    finalDataSet[i,j] = tf * itf
+  }
+}
+finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model
+```
+2
+
 ## Model Building and Testing
 
 ### nnet
 
-Lastly, we split the dataset in 60% train data, 40% test data, and start the model training. Using the `multinom()` function from the nnet package, it is possible create a multionmial logistic regression model training on the test data.
+Lastly, we split the dataset in 60% train data, 40% test data, and start the model training. Using the `multinom()` function from the nnet package, it is possible create a multinomial logistic regression model training on the test data.
 
 
 ```{r, results = "hide}
