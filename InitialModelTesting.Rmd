@@ -22,7 +22,6 @@ crandb_down()
 ```{r, echo = FALSE}
 taskViews <-  available.views()
 
-#random stuff past this point in the block
 taskViewNames <- c()
 for(i in seq(length(taskViews))){
   taskViewNames <- append(taskViewNames, unlist(taskViews[i])[1])
@@ -118,10 +117,10 @@ p_db <- tools::CRAN_package_db()
 package_db <- clean_CRAN_db()
 package_network <- build_network(package_db)
 
-dependenceTree <- build_dependence_tree(package_network, package = "PlackettLuce")
+#dependenceTree <- build_dependence_tree(package_network, package = "PlackettLuce")
 
-test <- summary_dependence_tree(dependenceTree)
-test
+#test <- summary_dependence_tree(dependenceTree)
+#test
 ```
 
 
@@ -134,58 +133,42 @@ dependenceIndex <- function(object, tv) {
         tempSummaries <- data.frame(object$summaries)
         tempGeneration <- object$nodes$generation
         tempPackage <- object$nodes$package
-        print(typeof(tempPackage))
         for(i in object$nodes$package){
-          print(tempPackage)
           temp <- match(i, tempPackage)
-          print(i)
-          print(temp)
           if(!(i %in% taskView)){
             tempSummaries <- tempSummaries[-temp,]
             tempPackage <- tempPackage[-temp]
             tempGeneration <- tempGeneration[-temp]
           }
         }
-        print(tempSummaries)
         w <- 1/colSums(tempSummaries[c("n_imported_by", "n_depended_by", "n_linked_by")])
-        print(w)
         g <- tempGeneration
         ind <- names(w) != tempPackage
-        print(ind)
         dependence_index <- weighted.mean(-g[ind], w[ind]) - 1
       if(is.na(dependence_index)){
         return(0)
       }
       return(dependence_index)
     }
-
+    return(0)
 }
 
 ```
 
 ```{r}
-summary_dependence_tree <- function(object, ...) {
-    summ <- object$summaries
-    if (nrow(summ)) {
-        w <- with(object, 1/rowSums(summaries[c("n_imported_by", "n_depended_by", "n_linked_by")]))
-        print(w)
-        g <- object$nodes$generation
-        ind <- names(w) != object$package
-        print(ind)
-        dependence_index <- weighted.mean(-g[ind], w[ind]) - 1
-        n_generations <- -min(object$nodes$generation)
-        parents <- with(object, nodes$package[nodes$generation == -1])
-    }
-    else {
-        n_generations <- 0
-        dependence_index <- 0
-        parents <- NULL
-    }
-    list(package = object$package,
-         n_generations = n_generations,
-         parents = parents,
-         dependence_index = dependence_index)
+options(warn = -1)  
+tempdf = data.frame()
+for(i in allDescCore$packages){
+  dependenceIndexVec <- c()
+  depTree = build_dependence_tree(package_network, package = i)
+  for(j in taskViewNames){
+    dependenceIndexVec = append(dependenceIndexVec, dependenceIndex(depTree, j))
+  }
+  tempdf = rbind(tempdf, dependenceIndexVec)
 }
+#finalDataSet = cbind(finalDataSet, tempdf)
+
+options(warn = 0)
 ```
 
 
@@ -209,7 +192,7 @@ Lastly, we split the dataset in 60% train data, 40% test data, and start the mod
 
 
 ```{r, results = "hide}
-sample_size <- floor(0.6 * nrow(finalDataSet))
+sample_size <- floor(0.7 * nrow(finalDataSet))
 set.seed(777)
 
 # randomly split data in r
@@ -218,7 +201,7 @@ train <- finalDataSet[picked,]
 test <- finalDataSet[-picked,]
 
 finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
-model <- multinom(taskView ~ ., data = train, MaxNWts = 25000, maxit = 1500)
+model <- multinom(taskView ~ ., data = train, MaxNWts = 25000, maxit = 5000)
 ```
 The model is then tested on the test data, and the class which is predicted with the highest probability is the one that is chosen. Below is a table outlining the model accuracy for each Task View. As can be seen, there is some strong variance between them. Lastly, we can see the overall model accuracy, which is better than a random classification, as there are 42 choices of Task Views, but is nonetheless very low.   
 
