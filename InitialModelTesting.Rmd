@@ -101,7 +101,7 @@ print(as.character(corpus[[1]]))
 ```{r}
 #Creating the bag of words
 dtm <- DocumentTermMatrix(corpus)
-dtm <- removeSparseTerms(dtm, 0.95)
+dtm <- removeSparseTerms(dtm, 0.99)
 finalDataSet <- as.data.frame(as.matrix(dtm))
  
 #perhaps put this after Package dependence index so this is the last column
@@ -173,10 +173,10 @@ options(warn = 0)
 
 
 ```{r}
-for(i in seq(length(finalDataSet[1]))){
+for(i in seq(length(finalDataSet[,1]))){
   for(j in seq(length(finalDataSet[1,]))){
-    tf = finalDataSet[i,j]/sum(finalDataSet[i,] != 0)
-    itf = log2(length(finalDataSet[1])/sum(finalDataSet[,j] != 0))
+    tf = finalDataSet[i,j]/length(finalDataSet[1])
+    itf = log(length(finalDataSet[1])/sum(finalDataSet[,j] != 0))
     finalDataSet[i,j] = tf * itf
   }
 }
@@ -191,23 +191,24 @@ finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation
 Lastly, we split the dataset in 60% train data, 40% test data, and start the model training. Using the `multinom()` function from the nnet package, it is possible create a multinomial logistic regression model training on the test data.
 
 
-```{r, results = "hide}
+```{r, results = hide}
 sample_size <- floor(0.7 * nrow(finalDataSet))
-set.seed(777)
+set.seed(8821)
 
 # randomly split data in r
 picked <- sample(seq_len(nrow(finalDataSet)),size = sample_size)
 train <- finalDataSet[picked,]
 test <- finalDataSet[-picked,]
 
-finalDataSet$taskView <- relevel(factor(finalDataSet$taskView), ref = "Agriculture")
+train$taskView <- relevel(as.factor(train$taskView), ref = "Agriculture")
+test$taskView <- relevel(as.factor(test$taskView), ref = "Agriculture")
 model <- multinom(taskView ~ ., data = train, MaxNWts = 25000, maxit = 5000)
 ```
 The model is then tested on the test data, and the class which is predicted with the highest probability is the one that is chosen. Below is a table outlining the model accuracy for each Task View. As can be seen, there is some strong variance between them. Lastly, we can see the overall model accuracy, which is better than a random classification, as there are 42 choices of Task Views, but is nonetheless very low.   
 
 ```{r, echo = FALSE}
 modelClassificationTest <- predict(model, newdata = test, "probs")
-classifiedList <- colnames(modelClassificationTest)[apply(modelClassificationTest,1,which.max)]
+classifiedList <- colnames(glmnetResults)[apply(exp(glmnetResults),1,which.max)]
 finalClassifiedDf <- data.frame(test$taskView, classifiedList)
 classificationCounter <- c()
 classificationOverview <- unique(finalClassifiedDf$test.taskView)

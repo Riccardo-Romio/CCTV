@@ -27,7 +27,9 @@ cleanText <- function(x){
 }
 
 ui <- fluidPage(
-  
+  #dashboardHeader(),
+  #dashboardSidebar(),
+  #dashboardBody(),
   selectizeInput("package", choices = NULL, label = "Select Package to Classify"), #look at server side selectize
   
   tableOutput("static"),
