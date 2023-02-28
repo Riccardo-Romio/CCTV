@@ -145,34 +145,45 @@ options(warn = 0)
 for(i in seq(length(finalDataSet[,1]))){
   for(j in seq(length(finalDataSet[1,]))){
     tf <- finalDataSet[j,i]/length(finalDataSet[1])
-    itf <- log2(length(finalDataSet[1])/length(finalDataSet[,i] != 0))
-    finalDataSet[j,i] <- tf * itf
+    idf <- log2(length(finalDataSet[1])/length(finalDataSet[,i] != 0))
+    finalDataSet[j,i] <- tf * idf
   }
 }
 finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model
 #######
 
-####### Dylan's method for calculating text similarity
+####### Alternative method for calculating text similarity
 
 #we want finalDataSet with just term frequency for now and appended taskView 
-taskViewWords <- df()
+taskViewWords <- finalDataSet[0,-length(finalDataSet)]
 
 for(i in unique(finalDataSet$taskView)){
-  temp <- filter(finalDataSet, taskView == i)
-  temp <- rowsums(finalDataSet[,-length(finalDataSet)])
-  temp$taskView <- i
+  temp <- subset(finalDataSet, taskView == i)
+  temp <- temp[, -length(temp)]
+  temp <- colSums(temp)
   taskViewWords <- rbind(taskViewWords, temp)
 }
+taskViewWords$taskView = taskViewNames
 
 taskViewWordsOnly <- taskViewWords[,-length(taskViewWords)]
+
 #now we compute tf-idf of taskViewWords
+
 for(i in seq(length(taskViewWordsOnly[,1]))){
   for(j in seq(length(taskViewWordsOnly[1,]))){
-    tf <- taskViewWords[j,i]/length(taskViewWordsOnly[j,] != 0])
-    itf <- log2(length(taskViewWordsOnly[1])/length(finalDataSet[,i] != 0))
+    tf <- taskViewWords[j,i]/length(taskViewWordsOnly[j,] != 0)
+    idf <- log2(length(taskViewWordsOnly[1])/length(taskViewWordsOnly[,i] != 0))
+    taskViewWordsOnly[j,i] = tf * idf  
   }
 }
 
+#calculate cosine similarity of package to taskView
+
+for(i in seq(length(finalDataSet))){
+  for(j in seq(length(taskViewWordsOnly))){
+    
+  }  
+}
 
 #######
 
