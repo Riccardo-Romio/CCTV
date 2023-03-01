@@ -121,6 +121,11 @@ dependenceIndex <- function(object, tv) {
   return(0)
 }
 #######
+#Clear understanding of data
+#How the data is processed
+#How the models work
+#The output, how the interface looks like
+#Define all the features properly, how we got them
 
 
 
