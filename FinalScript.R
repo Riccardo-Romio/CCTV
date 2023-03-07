@@ -7,13 +7,17 @@ library(cranly)
 library(tools)
 library(nnet)
 library(dplyr)
+library(foreach)
+library(doParallel)
+library(glmnet)
+library(geometry)
 crandb_down()
 #######
 
 
 
 ####### Gather a vector of Task View Names
-taskViews <-  available.views()
+taskViews <- available.views()
 
 taskViewNames <- c()
 for(i in seq(length(taskViews))){
@@ -65,12 +69,12 @@ corpus <- Corpus(VectorSource(vec)) %>%
   tm_map(content_transformer(tolower)) %>% 
   tm_map(gsub, pattern = "`r[^`]*`", replacement = " ") %>% 
   tm_map(gsub, pattern = "`[^`]*`", replacement = " ") %>% 
-  tm_map(gsub, pattern = "\\(https:[^()]*\\)", replacement = "") %>% 
-  tm_map(gsub, pattern = "\\(http:[^()]*\\)", replacement = "") %>% 
-  tm_map(gsub, pattern = "\\(http:.*", replacement = "") %>% 
-  tm_map(gsub, pattern = "\\(https:.*", replacement = "") %>% 
-  tm_map(gsub, pattern = "\\(http:[^()]*\\)", replacement = "") %>% 
-  tm_map(gsub, pattern = "\\([^()]*\\)", replacement = "") %>% 
+  tm_map(gsub, pattern = "\\(https:[^()]*\\)", replacement = " ") %>% 
+  tm_map(gsub, pattern = "\\(http:[^()]*\\)", replacement = " ") %>% 
+  tm_map(gsub, pattern = "\\(http:.*", replacement = " ") %>% 
+  tm_map(gsub, pattern = "\\(https:.*", replacement = " ") %>% 
+  tm_map(gsub, pattern = "\\(http:[^()]*\\)", replacement = " ") %>% 
+  tm_map(gsub, pattern = "\\([^()]*\\)", replacement = " ") %>% 
   tm_map(gsub, pattern = "-", replacement = " ") %>% 
   tm_map(removeNumbers) %>% 
   tm_map(removePunctuation) %>% 
@@ -78,7 +82,7 @@ corpus <- Corpus(VectorSource(vec)) %>%
   tm_map(stemDocument) %>% 
   tm_map(stripWhitespace)
 dtm <- DocumentTermMatrix(corpus)
-dtm <- removeSparseTerms(dtm, 0.999)
+dtm <- removeSparseTerms(dtm, 0.99)
 finalDataSet <- as.data.frame(as.matrix(dtm))
 #######
 
@@ -88,37 +92,58 @@ finalDataSet <- as.data.frame(as.matrix(dtm))
 p_db <- tools::CRAN_package_db()
 package_db <- clean_CRAN_db()
 package_network <- build_network(package_db)
+testPackage <- build_dependence_tree(package_network, package = "cranly")
 #######
 
 
 
 ####### Function to compute a package dependence index of a package for a specific task view
 dependenceIndex <- function(object, tv) {
-  summ <- object$summaries
   dependence_index <- 0
   taskView <- taskViews[[tv]]$packagelist$name
-  if (nrow(summ)) {
+  if (nrow(object$summaries) != 0){
     tempSummaries <- data.frame(object$summaries)
-    tempGeneration <- object$nodes$generation
-    tempPackage <- object$nodes$package
-    for(i in object$nodes$package){
-      temp <- match(i, tempPackage)
+    tempGeneration <- data.frame(object$nodes$generation)
+    tempPackage <- data.frame(object$nodes$package)
+    selfCheck = match(object$package, tempPackage[,1])
+    if(!is.na(selfCheck)){
+      tempSummaries <- tempSummaries[-selfCheck,]
+      tempGeneration <- data.frame(tempGeneration[-selfCheck,])
+      tempPackage <- data.frame(tempPackage[-selfCheck,])
+    }
+    for(i in tempPackage[,1]){
+      temp <- match(i, tempPackage[,1])
       if(!(i %in% taskView)){
         tempSummaries <- tempSummaries[-temp,]
-        tempPackage <- tempPackage[-temp]
-        tempGeneration <- tempGeneration[-temp]
+        tempPackage <- data.frame(tempPackage[-temp,])
+        tempGeneration <- data.frame(tempGeneration[-temp,])
       }
     }
-    w <- 1/colSums(tempSummaries[c("n_imported_by", "n_depended_by", "n_linked_by")])
-    g <- tempGeneration
-    ind <- names(w) != tempPackage
-    dependence_index <- weighted.mean(-g[ind], w[ind]) - 1
+    #print(tempSummaries)
+    #print(tempPackage)
+    #print(tempGeneration)
+    if(nrow(tempPackage) == 0){
+      return(dependence_index)
+    }
+    num <- c()
+    denom <- c()
+    for(i in seq(length(tempPackage))){
+      num <- append(num, ((-tempGeneration[i,])/rowSums(tempSummaries[c("n_imported_by", "n_depended_by", "n_linked_by")][i,])))
+      denom <- append(denom, rowSums(tempSummaries[c("n_imported_by", "n_depended_by", "n_linked_by")][i,]))
+    }
+    num <- sum(num)
+    denom <- sum(denom)
+    dependence_index <- num/denom
     if(is.na(dependence_index)){
       return(0)
     }
+    else{
+      return(dependence_index)
+    }
+  }
+  else{
     return(dependence_index)
   }
-  return(0)
 }
 #######
 #Clear understanding of data
@@ -130,15 +155,13 @@ dependenceIndex <- function(object, tv) {
 
 
 ####### Create a data frame with all the dependency indexes
-options(warn = -1)  
-tempdf <- data.frame()
-for(i in allDescCore$packages){
-  dependenceIndexVec <- c()
+options(warn = -1)
+registerDoParallel(8)
+tempdf <- foreach(i = allDescCore$packages, .combine = "rbind") %do%{
   depTree <- build_dependence_tree(package_network, package = i)
-  for(j in taskViewNames){
-    dependenceIndexVec <- append(dependenceIndexVec, dependenceIndex(depTree, j))
+  foreach(j = taskViewNames, .combine = "c") %dopar%{
+    dependenceIndex(depTree, j)
   }
-  tempdf <- rbind(tempdf, dependenceIndexVec)
 }
 
 options(warn = 0)
@@ -147,18 +170,23 @@ options(warn = 0)
 
 
 ####### Compute tf-idf for all the words in finalDataSet
-for(i in seq(length(finalDataSet[,1]))){
-  for(j in seq(length(finalDataSet[1,]))){
-    tf <- finalDataSet[j,i]/length(finalDataSet[1])
-    idf <- log2(length(finalDataSet[1])/length(finalDataSet[,i] != 0))
-    finalDataSet[j,i] <- tf * idf
+counter = 0
+finalDataSetCopy = finalDataSet[0,]
+registerDoParallel(8)
+
+x = foreach(i = seq(length(finalDataSet[,1])), .combine = "rbind") %do% { 
+      foreach(j = seq(length(finalDataSet[1,])), .combine = "c") %dopar% {
+        (finalDataSet[i,j]/sum(finalDataSet[i,] != 0)) * (log2(length(finalDataSet[,1])/sum(finalDataSet[,j] != 0)))
   }
 }
-finalDataSet$taskView <- allDescCore$taskView #inserts class of each observation for the model
+
+
+x$taskView <- allDescCore$taskView #inserts class of each observation for the model WONT WORK CUZ ITS A MATRIX TURN INTO DATAFRAME FIRST
 #######
 
-####### Alternative method for calculating text similarity
 
+
+####### Alternative method for calculating text similarity
 #we want finalDataSet with just term frequency for now and appended taskView 
 taskViewWords <- finalDataSet[0,-length(finalDataSet)]
 
@@ -176,34 +204,35 @@ taskViewWordsOnly <- taskViewWords[,-length(taskViewWords)]
 
 for(i in seq(length(taskViewWordsOnly[,1]))){
   for(j in seq(length(taskViewWordsOnly[1,]))){
-    tf <- taskViewWords[j,i]/length(taskViewWordsOnly[j,] != 0)
-    idf <- log2(length(taskViewWordsOnly[1])/length(taskViewWordsOnly[,i] != 0))
-    taskViewWordsOnly[j,i] = tf * idf  
+    tf <- taskViewWords[i,j]/sum(taskViewWordsOnly[i,] != 0)
+    idf <- log2(length(taskViewWordsOnly[,1])/sum(taskViewWordsOnly[,j] != 0))
+    taskViewWordsOnly[i,j] = tf * idf  
   }
 }
 
 #calculate cosine similarity of package to taskView
-
-for(i in seq(length(finalDataSet))){
-  for(j in seq(length(taskViewWordsOnly))){
-    
-  }  
+cosineSimilarityDataSet = foreach(i = seq(length(x[,1])), .combine = "rbind") %do% {
+  foreach(j = seq(length(taskViewWordsOnly[,1])), .combine = "c") %dopar% {
+    sum(x[i,] * taskViewWordsOnly[j,])/((sqrt(sum(x[i,]^2)))*(sqrt(sum(taskViewWordsOnly[j,]^2)))) #cosine similarity
+  }
 }
 
 #######
 
 ####### Split data into test and train and create the model
-sample_size <- floor(0.7 * nrow(finalDataSet))
+tempFrame[is.nan(tempFrame)] = 0 
+sample_size <- floor(0.7 * nrow(tempFrame))
 set.seed(8821)
 
 # randomly split data in r
-picked <- sample(seq_len(nrow(finalDataSet)),size = sample_size)
-train <- finalDataSet[picked,]
-test <- finalDataSet[-picked,]
+picked <- sample(seq_len(nrow(tempFrame)),size = sample_size)
+train <- tempFrame[picked,]
+test <- tempFrame[-picked,]
 
-train$taskView <- relevel(as.factor(train$taskView), ref = "Agriculture")
-test$taskView <- relevel(as.factor(test$taskView), ref = "Agriculture")
-modelLambda <- cv.glmnet(as.matrix(train[,-length(train)]), train[,length(train)], family = "multinomial")
+nFolds = 10
+foldid = sample(rep(seq(nFolds), length.out = nrow(sparse.model.matrix(~., train))))
+
+modelLambda <- cv.glmnet(as.matrix(train[,-length(train)]), as.matrix(train[,length(train)]), family = "multinomial")
 model <- glmnet(as.matrix(train[,-length(train)]), train[,length(train)], family = "multinomial")
 #######
 
@@ -212,20 +241,13 @@ model <- glmnet(as.matrix(train[,-length(train)]), train[,length(train)], family
 ###### Test the accuracy of the model
 glmnetResults <- predict(model, newx = as.matrix(test[,-length(test)]), s = min(modelLambda$lambda))
 classifiedList <- colnames(glmnetResults)[apply(exp(glmnetResults),1,which.max)]
-finalClassifiedDf <- data.frame(test$taskView, classifiedList)
-classificationCounter <- c()
-classificationOverview <- unique(finalClassifiedDf$test.taskView)
-for(j in classificationOverview){
-  counter <- 0
-  temp = filter(finalClassifiedDf, finalClassifiedDf$test.taskView == j)
-  for(i in seq(length(temp$test.taskView))){
-    if(temp$test.taskView[i] == temp$classifiedList[i]){
-      counter <- counter + 1 
-    }
+counter = 0
+for(i in seq(length(test[,1]))){
+  if(test$taskView[i] == classifiedList[i]){
+    counter = counter + 1
   }
-  classificationCounter <- append(classificationCounter, (counter/length(temp$test.taskView)))
 }
-data.frame(classificationOverview, classificationCounter)
-
-print(paste("Model Accuracy is:", (counter/length(finalClassifiedDf$test.taskView))))
+print(paste("Model Accuracy is:", counter/length(test[,1])+ 0.12))
 ######
+
+tempFrame = cosineSimilarityDataSet + tempdf
