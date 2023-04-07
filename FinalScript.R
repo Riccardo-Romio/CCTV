@@ -92,7 +92,7 @@ finalDataSet <- as.data.frame(as.matrix(dtm))
 p_db <- tools::CRAN_package_db()
 package_db <- clean_CRAN_db()
 package_network <- build_network(package_db)
-testPackage <- build_dependence_tree(package_network, package = "cranly")
+ #testPackage <- build_dependence_tree(package_network, package = "cranly")
 #######
 
 
@@ -146,13 +146,6 @@ dependenceIndex <- function(object, tv) {
   }
 }
 #######
-#Clear understanding of data
-#How the data is processed
-#How the models work
-#The output, how the interface looks like
-#Define all the features properly, how we got them
-
-
 
 ####### Create a data frame with all the dependency indexes
 options(warn = -1)
@@ -171,7 +164,7 @@ options(warn = 0)
 
 ####### Compute tf-idf for all the words in finalDataSet
 counter = 0
-finalDataSetCopy = finalDataSet[0,]
+finalDataSetCopy = finalDataSet
 registerDoParallel(8)
 
 x = foreach(i = seq(length(finalDataSet[,1])), .combine = "rbind") %do% { 
@@ -180,15 +173,16 @@ x = foreach(i = seq(length(finalDataSet[,1])), .combine = "rbind") %do% {
   }
 }
 
+x <- as.data.frame(matrix(x, ncol = length(finalDataSet[0,])))
 
-x$taskView <- allDescCore$taskView #inserts class of each observation for the model WONT WORK CUZ ITS A MATRIX TURN INTO DATAFRAME FIRST
 #######
 
 
 
 ####### Alternative method for calculating text similarity
 #we want finalDataSet with just term frequency for now and appended taskView 
-taskViewWords <- finalDataSet[0,-length(finalDataSet)]
+finalDataSet$taskView <- allDescCore$taskView
+taskViewWords <- finalDataSet[0, -length(finalDataSet)]
 
 for(i in unique(finalDataSet$taskView)){
   temp <- subset(finalDataSet, taskView == i)
@@ -211,18 +205,31 @@ for(i in seq(length(taskViewWordsOnly[,1]))){
 }
 
 #calculate cosine similarity of package to taskView
+
 cosineSimilarityDataSet = foreach(i = seq(length(x[,1])), .combine = "rbind") %do% {
   foreach(j = seq(length(taskViewWordsOnly[,1])), .combine = "c") %dopar% {
     sum(x[i,] * taskViewWordsOnly[j,])/((sqrt(sum(x[i,]^2)))*(sqrt(sum(taskViewWordsOnly[j,]^2)))) #cosine similarity
   }
+}
+cosineSimilarityDataSet <- as.data.frame(matrix(cosineSimilarityDataSet, ncol = 42))
+cosineSimilarityDataSet$taskView <- allDescCore$taskView 
+#######
+
+#######
+tempFrame = cbind(tempdf, cosineSimilarityDataSet)
+#######
+
+#######
+is.nan.data.frame <- function(x){
+  do.call(cbind, lapply(x, is.nan))
 }
 
 #######
 
 ####### Split data into test and train and create the model
 tempFrame[is.nan(tempFrame)] = 0 
-sample_size <- floor(0.7 * nrow(tempFrame))
 set.seed(8821)
+sample_size <- floor(0.7 * nrow(tempFrame))
 
 # randomly split data in r
 picked <- sample(seq_len(nrow(tempFrame)),size = sample_size)
